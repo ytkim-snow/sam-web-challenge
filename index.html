@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#17130f">
+  <title>삼국지: 군웅의 길 — Web Challenge</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, -apple-system, "Noto Sans KR", sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; background: #070605; color: #f5ead0; overflow: hidden; }
+    body { touch-action: none; }
+    #canvas { display: block; width: 100%; height: 100%; border: 0; outline: 0; }
+    #boot-overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: radial-gradient(circle at 50% 35%, #302216, #090706 68%); }
+    #boot-card { width: min(620px, 100%); padding: 28px; border: 1px solid #a77c30; border-radius: 14px; background: rgba(20, 16, 12, .96); box-shadow: 0 24px 80px #000; text-align: center; }
+    h1 { margin: 0 0 10px; color: #f2d07a; font-size: clamp(24px, 5vw, 38px); }
+    p { margin: 8px 0; line-height: 1.55; }
+    .muted { color: #c9baa0; font-size: 14px; }
+    #boot-progress { width: 100%; height: 14px; margin: 20px 0 8px; accent-color: #c99a38; }
+    #boot-progress[hidden] { display: none; }
+    #boot-actions { display: flex; justify-content: center; gap: 12px; margin-top: 20px; }
+    button { min-width: 160px; min-height: 48px; padding: 10px 18px; border: 1px solid #d5a94d; border-radius: 8px; background: #6e2d25; color: #fff4d9; font: inherit; font-weight: 700; cursor: pointer; }
+    button:focus-visible { outline: 3px solid #fff2a8; outline-offset: 3px; }
+    #retry-button { background: #3b352b; }
+    #boot-error { margin-top: 14px; padding: 12px; border-radius: 8px; background: #521f22; color: #ffd9d9; white-space: pre-wrap; }
+    #rotate-notice { display: none; position: fixed; inset: 0; z-index: 30; place-items: center; padding: 32px; background: #100d0a; text-align: center; }
+    @media (orientation: portrait) and (max-width: 600px) { #rotate-notice { display: grid; } }
+  </style>
+  <link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
+
+</head>
+<body data-godot-state="ready">
+  <canvas id="canvas">이 브라우저는 canvas를 지원하지 않습니다.</canvas>
+  <noscript>JavaScript를 켜야 게임을 실행할 수 있습니다.</noscript>
+  <div id="boot-overlay" role="dialog" aria-labelledby="boot-title" aria-describedby="boot-help">
+    <section id="boot-card">
+      <h1 id="boot-title">삼국지: 군웅의 길</h1>
+      <p>Web Challenge Edition</p>
+      <p id="boot-help" class="muted">마우스·터치로 선택하고, 전투에서는 격자를 눌러 이동·공격합니다. 키보드 Esc는 뒤로 가기입니다.</p>
+      <progress id="boot-progress" hidden></progress>
+      <p id="boot-status" aria-live="polite">시작 버튼을 누르면 게임 데이터를 불러옵니다.</p>
+      <div id="boot-actions">
+        <button id="start-button" type="button">게임 시작</button>
+        <button id="retry-button" type="button" hidden>다시 시도</button>
+      </div>
+      <div id="boot-error" role="alert" hidden></div>
+    </section>
+  </div>
+  <div id="rotate-notice"><p>가로 화면으로 돌려 주세요.<br><span class="muted">844×390 이상의 가로 화면을 권장합니다.</span></p></div>
+  <script src="index.js"></script>
+  <script>
+    const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":6769268,"index.wasm":39509339},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+    const GODOT_THREADS_ENABLED = false;
+    const engine = new Engine(GODOT_CONFIG);
+    const body = document.body;
+    const overlay = document.getElementById('boot-overlay');
+    const startButton = document.getElementById('start-button');
+    const retryButton = document.getElementById('retry-button');
+    const progress = document.getElementById('boot-progress');
+    const status = document.getElementById('boot-status');
+    const errorBox = document.getElementById('boot-error');
+
+    function fail(error) {
+      console.error(error);
+      body.dataset.godotState = 'error';
+      progress.hidden = true;
+      errorBox.hidden = false;
+      errorBox.textContent = error instanceof Error ? error.message : String(error);
+      status.textContent = '게임을 시작하지 못했습니다.';
+      retryButton.hidden = false;
+      startButton.hidden = true;
+    }
+
+    const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+    if (missing.length) {
+      fail(new Error('필수 브라우저 기능이 없습니다: ' + missing.join(', ')));
+    }
+
+    startButton.addEventListener('click', async () => {
+      startButton.disabled = true;
+      progress.hidden = false;
+      body.dataset.godotState = 'loading';
+      status.textContent = '게임 데이터 불러오는 중…';
+      try {
+        await engine.startGame({
+          onProgress(current, total) {
+            if (current > 0 && total > 0) {
+              progress.value = current;
+              progress.max = total;
+              status.textContent = `게임 데이터 불러오는 중… ${Math.round(current / total * 100)}%`;
+            } else {
+              progress.removeAttribute('value');
+              progress.removeAttribute('max');
+            }
+          },
+        });
+        body.dataset.godotState = 'running';
+        overlay.remove();
+        document.getElementById('canvas').focus();
+      } catch (error) {
+        fail(error);
+      }
+    });
+
+    retryButton.addEventListener('click', () => window.location.reload());
+  </script>
+</body>
+</html>
+
